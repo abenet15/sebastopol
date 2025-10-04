@@ -5,7 +5,7 @@
 ## 🛠️ Installation
 
 ```bash
-git clone https://github.com/yourusername/sobastopol.git
+git clone https://github.com/yourusername/sebastopol.git
 cd sebastopol
 pip install -r requirements.txt
 python main.py
