@@ -6,6 +6,11 @@ import units
 
 world_scale = 16
 
+def draw_scene(surface, bg, player_one, player_two):
+    bg.put_on(surface)
+    player_one.put_on(surface)
+    player_two.put_on(surface)
+
 def draw_over(screen):
     screen.fill((123, 137, 100))
     f1 = pygame.font.Font("pixels/8-BIT WONDER.TTF", 64)
@@ -51,14 +56,18 @@ def main():
     pygame.init()
     screen = pygame.display.set_mode((800, 800))
     clock = pygame.time.Clock()
+
     pixel_off = pygame.image.load('pixels/b0.png').convert()
+    po = pygame.image.load('pixels/b01.png').convert()
     pixel_on = pygame.image.load('pixels/b1.png').convert()
 
-    bg = world.World(16, 1600 + 16, 880 + 16, pixel_off, pixel_on)
+    bg = world.World(1600 + 16, 880 + 16, pixel_off, po)
     player_one = units.TankUnit([[0, 1, 0], [1, 1, 1], [1, 0, 1]], 4 * 16, 4 * 16, pixel_on)
     player_two = units.TankUnit([[0, 1, 0], [1, 1, 1], [1, 0, 1]], 6 * 16, 10 * 16, pixel_on)
 
     menu_loop(screen)
+    bg_offset = [0, 0]
+    bg_shake_timer = 0
     running = True
     while running:
         screen.fill((123, 137, 100))  # Background fill
@@ -69,20 +78,42 @@ def main():
             elif event.type == pygame.KEYDOWN:
                 player_one.move(event.key, controler=0)
                 player_two.move(event.key, controler=1)
-
+                
         if player_one.got_shot(player_two.bullets):
-            draw_over(screen)
-            pygame.time.wait(2000)
-            running = False
-
+            bg_shake_timer = 15  # frames to shake
+            player_one.trigger_shake(frames=15, intensity=4)
+            #draw_over(screen)
+            
         if player_two.got_shot(player_one.bullets):
-            draw_over(screen)
-            pygame.time.wait(2000)
-            running = False
+            bg_shake_timer = 15  # frames to shake
+            player_two.trigger_shake(frames=15, intensity=4)
+            #draw_over(screen)
 
-        bg.put_on(screen)
+        hit_bullet = player_one.got_shot(player_two.bullets)
+        if hit_bullet:
+            player_two.bullets.remove(hit_bullet)
+        hit_bullet = player_two.got_shot(player_one.bullets)
+        if hit_bullet:
+            player_one.bullets.remove(hit_bullet)
+
+        if bg_shake_timer > 0:
+            bg_shake_timer -= 1
+            bg_offset[0] = np.random.randint(-8, 9)
+            bg_offset[1] = np.random.randint(-8, 9)
+        else:
+            bg_offset = [0, 0]
+    
+        bg.put_on(screen, offset=bg_offset)
+        bg.turbulence(screen, pygame.time.get_ticks())
+        
         player_one.put_on(screen)
+        player_one.update_trail()
+        player_one.update_shake()
+
         player_two.put_on(screen)
+        player_two.update_trail()
+        player_two.update_shake()
+        
         pygame.display.flip()
         clock.tick(30)
 
