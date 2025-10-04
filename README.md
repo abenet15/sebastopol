@@ -6,7 +6,7 @@
 
 ```bash
 git clone https://github.com/yourusername/sobastopol.git
-cd sobastopol
+cd sebastopol
 pip install -r requirements.txt
 python main.py
 
