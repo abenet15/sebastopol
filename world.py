@@ -66,9 +66,16 @@ class World(GameObject):
         # Check for power-up collisions with tanks
         for tank in tanks:
             for power_up in self.power_ups[:]:
-                if power_up.active and power_up.collides_with(tank):
-                    power_up.apply(tank)
-                    self.power_ups.remove(power_up)
+                if power_up.active:
+                    # Simple rect-based collision for more reliable detection
+                    if tank.rect.colliderect(power_up.rect):
+                        # Apply power-up effect
+                        power_up.apply(tank)
+                        # Remove the power-up
+                        power_up.active = False
+                        self.power_ups.remove(power_up)
+                        # Debug print to confirm power-up was collected
+                        print(f"Power-up collected: {power_up.type} by tank at {tank.x}, {tank.y}")
 
     def put_on(self, screen, offset=(0, 0)):
         """Draw the world and its elements on the screen."""

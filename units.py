@@ -10,18 +10,31 @@ from config import *
 
 class Bullet(GameObject):
     """Bullet class for projectiles fired by tanks."""
-    def __init__(self, x, y, direction, pixel_on):
+    def __init__(self, x, y, direction, pixel_on, is_red_fire=False):
         super().__init__(x, y)
         self.direction = direction
         self.pixel = pixel_on
         self.clock = 0
         self.speed = BULLET_SPEED
+        self.is_red_fire = is_red_fire  # Red fire bullets deal double damage
+        self.damage = 2 if is_red_fire else 1
+        self.resource_manager = ResourceManager.get_instance()
         self.create_surface()
         
     def create_surface(self):
         """Create the visual representation of the bullet."""
-        self.surface = pygame.Surface((WORLD_SCALE, WORLD_SCALE), pygame.SRCALPHA)
-        self.surface.blit(self.pixel, (0, 0))
+        if self.is_red_fire:
+            # Use red bullet sprite for red fire power-up
+            self.surface = self.resource_manager.get_image("sprites/bullet_red.png")
+            self.surface = pygame.transform.scale(self.surface, (WORLD_SCALE, WORLD_SCALE))
+        else:
+            # Use regular bullet or fallback to pixel
+            try:
+                self.surface = self.resource_manager.get_image("sprites/bullet.png")
+                self.surface = pygame.transform.scale(self.surface, (WORLD_SCALE, WORLD_SCALE))
+            except:
+                self.surface = pygame.Surface((WORLD_SCALE, WORLD_SCALE), pygame.SRCALPHA)
+                self.surface.blit(self.pixel, (0, 0))
         self.update_rect()
 
     def move(self):
@@ -37,20 +50,44 @@ class TankUnit(GameObject):
     """Tank unit class for player-controlled vehicles."""
     def __init__(self, image, x, y, pixel_on):
         super().__init__(x, y)
-        self.image = image
         self.pixel = pixel_on
         self.directions = [(-1,0),(1,0),(0,-1),(0,1)]  # Left, Right, Up, Down
         self.direction = self.directions[0]
         self.bullets = []
+        self.image = image  # Store original image
+        self.direction_num = 2  # Default to up
         
-        # Create orientations (rotated versions of the tank)
+        # Create orientations from pixel array first as fallback
         self.orientations = {
             0: self.create_surface(np.rot90(self.image, k=1)),   # Left
             1: self.create_surface(np.rot90(self.image, k=-1)),  # Right
             2: self.create_surface(self.image),                  # Up
             3: self.create_surface(np.rot90(self.image, k=2))    # Down
         }
-        self.orientation = self.orientations[2]  # Default orientation (up)
+        self.orientation = self.orientations[self.direction_num]
+        self.surface = self.orientation
+        
+        # Try to load tank sprite (will override pixel array if successful)
+        try:
+            from utils import ResourceManager
+            resource_manager = ResourceManager.get_instance()
+            tank_sprite = resource_manager.get_image("sprites/tank.png")
+            if tank_sprite:
+                # Scale to match tank size
+                tank_sprite = pygame.transform.scale(tank_sprite, (WORLD_SCALE*3, WORLD_SCALE*3))
+                # Update all orientations
+                np_sprite = pygame.surfarray.array3d(tank_sprite)
+                self.orientations = {
+                    0: pygame.surfarray.make_surface(np.rot90(np_sprite, k=1)),   # Left
+                    1: pygame.surfarray.make_surface(np.rot90(np_sprite, k=-1)),  # Right
+                    2: pygame.surfarray.make_surface(np_sprite),                  # Up
+                    3: pygame.surfarray.make_surface(np.rot90(np_sprite, k=2))    # Down
+                }
+                self.orientation = self.orientations[self.direction_num]
+                self.surface = self.orientation
+                print("Tank sprite loaded successfully")
+        except Exception as e:
+            print(f"Using fallback pixel array: {e}")
         self.direction_num = 2
         
         # Visual effects
@@ -68,6 +105,12 @@ class TankUnit(GameObject):
         self.speed_boost_timer = 0
         self.has_rapid_fire = False
         self.rapid_fire_timer = 0
+        self.is_moving = False
+        self.last_key_pressed = None
+        
+        # Continuous movement for speed boost
+        self.is_moving = False
+        self.last_key_pressed = None
         
         # Load sounds using ResourceManager
         self.resource_manager = ResourceManager.get_instance()
@@ -80,7 +123,13 @@ class TankUnit(GameObject):
         surface = pygame.Surface((WORLD_SCALE*3, WORLD_SCALE*3), pygame.SRCALPHA)
         for y, row in enumerate(np_image):
             for x, pixel in enumerate(row):
-                if pixel == 1:
+                # Check if pixel is a single value or an array
+                if isinstance(pixel, (list, np.ndarray)):
+                    is_active = np.any(pixel)
+                else:
+                    is_active = pixel == 1
+                    
+                if is_active:
                     surface.blit(self.pixel, (x * WORLD_SCALE, y * WORLD_SCALE))
         return surface
 
@@ -114,7 +163,12 @@ class TankUnit(GameObject):
     def shot(self):
         """Fire a bullet in the current direction."""
         self.trigger_shake()
-        bullet = Bullet(self.x+WORLD_SCALE, self.y+WORLD_SCALE, self.direction, self.pixel)
+        
+        # Check if red fire power-up is active
+        is_red_fire = self.has_rapid_fire
+        
+        # Create bullet with appropriate type
+        bullet = Bullet(self.x+WORLD_SCALE, self.y+WORLD_SCALE, self.direction, self.pixel, is_red_fire)
         self.bullets.append(bullet)
         self.laser_sound.play()
         
@@ -122,8 +176,8 @@ class TankUnit(GameObject):
         if self.has_rapid_fire:
             # Add slight spread to rapid fire bullets
             offset = 5
-            bullet_left = Bullet(self.x+WORLD_SCALE-offset, self.y+WORLD_SCALE-offset, self.direction, self.pixel)
-            bullet_right = Bullet(self.x+WORLD_SCALE+offset, self.y+WORLD_SCALE+offset, self.direction, self.pixel)
+            bullet_left = Bullet(self.x+WORLD_SCALE-offset, self.y+WORLD_SCALE-offset, self.direction, self.pixel, is_red_fire)
+            bullet_right = Bullet(self.x+WORLD_SCALE+offset, self.y+WORLD_SCALE+offset, self.direction, self.pixel, is_red_fire)
             self.bullets.extend([bullet_left, bullet_right])
 
     def got_shot(self, bullets):
@@ -139,7 +193,7 @@ class TankUnit(GameObject):
                 return bullet  # Return the bullet that hit
         return None
 
-    def move(self, key, controler=0):
+    def move(self, key, controler=0, key_up=False, other_tank=None):
         """Handle movement based on key input."""
         # Define control keys for each player
         keys = [
@@ -147,6 +201,13 @@ class TankUnit(GameObject):
             [pygame.K_a, pygame.K_d, pygame.K_w, pygame.K_s, pygame.K_e]
         ][controler]
         
+        # Handle key release for continuous movement
+        if key_up:
+            if key in keys[:4] and key == self.last_key_pressed:
+                self.is_moving = False
+                self.last_key_pressed = None
+            return
+            
         self.add_trail()
         if len(self.trail) > self.max_trail:
             self.trail.pop(0)
@@ -158,30 +219,84 @@ class TankUnit(GameObject):
             self.orientation = self.orientations[self.direction_num]
             self.direction = self.directions[self.direction_num]
             
-            # Apply speed boost if active
+            # Set continuous movement if speed boost is active
+            if self.has_speed_boost:
+                self.is_moving = True
+                self.last_key_pressed = key
+            
+            # Calculate new position
             move_distance = WORLD_SCALE * (2 if self.has_speed_boost else 1)
-            self.x += self.direction[0] * move_distance
-            self.y += self.direction[1] * move_distance
-            self.update_rect()
+            new_x = self.x + self.direction[0] * move_distance
+            new_y = self.y + self.direction[1] * move_distance
+            
+            # Create temporary rect for collision detection
+            temp_rect = pygame.Rect(new_x, new_y, WORLD_SCALE*3, WORLD_SCALE*3)
+            
+            # Check for collision with other tank
+            can_move = True
+            if other_tank and temp_rect.colliderect(other_tank.rect):
+                can_move = False
+                
+            # Apply movement if no collision
+            if can_move:
+                self.x = new_x
+                self.y = new_y
+                self.update_rect()
             
         # Fire key
         elif key == keys[4]:
             self.fire_cooldown *= -1
             self.shot()
 
-    def update(self):
+    def update(self, other_tank=None):
         """Update tank state including power-ups and bullets."""
         # Update power-up timers
         current_time = pygame.time.get_ticks()
         
-        if self.has_shield and current_time > self.shield_timer:
+        # Check if any power-ups have expired
+        shield_expired = self.has_shield and current_time > self.shield_timer
+        speed_expired = self.has_speed_boost and current_time > self.speed_boost_timer
+        fire_expired = self.has_rapid_fire and current_time > self.rapid_fire_timer
+        
+        # Reset power-up states
+        if shield_expired:
             self.has_shield = False
             
-        if self.has_speed_boost and current_time > self.speed_boost_timer:
+        if speed_expired:
             self.has_speed_boost = False
+            self.is_moving = False
             
-        if self.has_rapid_fire and current_time > self.rapid_fire_timer:
+        if fire_expired:
             self.has_rapid_fire = False
+            
+        # Reset tank sprite if all power-ups expired
+        if shield_expired or speed_expired or fire_expired:
+            if not (self.has_shield or self.has_speed_boost or self.has_rapid_fire):
+                # Reset to default tank sprite
+                try:
+                    self.update_tank_sprite("sprites/tank.png")
+                except:
+                    # If sprite not found, revert to original orientation
+                    self.surface = self.orientations[self.direction_num]
+                    self.update_rect()
+            
+        # Handle continuous movement if speed boost is active
+        if self.is_moving and self.has_speed_boost:
+            move_distance = WORLD_SCALE * 2  # Double speed with boost
+            # Check for collision with other tank before moving
+            new_x = self.x + self.direction[0] * move_distance
+            new_y = self.y + self.direction[1] * move_distance
+            temp_rect = pygame.Rect(new_x, new_y, WORLD_SCALE*3, WORLD_SCALE*3)
+            
+            can_move = True
+            if other_tank and temp_rect.colliderect(other_tank.rect):
+                can_move = False
+                
+            if can_move:
+                self.x = new_x
+                self.y = new_y
+                self.update_rect()
+                self.add_trail()
             
         # Update bullets
         for bullet in self.bullets:
@@ -208,7 +323,14 @@ class TankUnit(GameObject):
         # Draw shield effect if active
         if self.has_shield:
             shield_surface = pygame.Surface((WORLD_SCALE*3 + 10, WORLD_SCALE*3 + 10), pygame.SRCALPHA)
-            shield_color = (0, 100, 255, 100)  # Semi-transparent blue
+            # Add pulsing effect based on time remaining
+            current_time = pygame.time.get_ticks()
+            time_left = self.shield_timer - current_time
+            shield_alpha = 100
+            if time_left < 1000:  # Last second, make it blink
+                if time_left % 200 < 100:  # Blink every 0.2 seconds
+                    shield_alpha = 180
+            shield_color = (0, 100, 255, shield_alpha)  # Semi-transparent blue
             pygame.draw.ellipse(shield_surface, shield_color, shield_surface.get_rect())
             screen.blit(shield_surface, (self.x - 5 + offset_x, self.y - 5 + offset_y))
     
@@ -228,16 +350,60 @@ class TankUnit(GameObject):
         """Activate speed boost power-up."""
         self.has_speed_boost = True
         self.speed_boost_timer = pygame.time.get_ticks() + duration
+        # Change tank sprite to speed boost version
+        try:
+            self.update_tank_sprite("sprites/tank_speed_boost.png")
+        except:
+            pass
         
     def activate_shield(self, duration):
         """Activate shield power-up."""
         self.has_shield = True
         self.shield_timer = pygame.time.get_ticks() + duration
+        # Change tank sprite to shield version
+        try:
+            self.update_tank_sprite("sprites/tank_activate_shield.png")
+        except:
+            pass
         
     def rapid_fire(self, duration):
         """Activate rapid fire power-up."""
         self.has_rapid_fire = True
         self.rapid_fire_timer = pygame.time.get_ticks() + duration
+        # Change tank sprite to red fire version
+        try:
+            self.update_tank_sprite("sprites/tank_red_fire.png")
+        except:
+            pass
+        # Change tank sprite to red fire version
+        try:
+            self.update_tank_sprite("sprites/tank_red_fire.png")
+        except:
+            pass
+            
+    def update_tank_sprite(self, sprite_path):
+        """Update the tank sprite based on power-up."""
+        # Load the new sprite
+        try:
+            tank_sprite = self.resource_manager.get_image(sprite_path)
+            if tank_sprite:
+                # Scale to match tank size
+                tank_sprite = pygame.transform.scale(tank_sprite, (WORLD_SCALE*3, WORLD_SCALE*3))
+                # Convert to numpy array for rotation
+                self.image = pygame.surfarray.array3d(tank_sprite)
+                # Update all orientations with proper rotations
+                self.orientations = {
+                    0: pygame.surfarray.make_surface(np.rot90(self.image, k=1)),   # Left
+                    1: pygame.surfarray.make_surface(np.rot90(self.image, k=-1)),  # Right
+                    2: pygame.surfarray.make_surface(self.image),                  # Up
+                    3: pygame.surfarray.make_surface(np.rot90(self.image, k=2))    # Down
+                }
+                # Update current orientation
+                self.orientation = self.orientations[self.direction_num]
+                self.surface = self.orientation
+                print(f"Tank sprite updated to: {sprite_path} with orientation {self.direction_num}")
+        except Exception as e:
+            print(f"Error updating tank sprite: {e}")
 
 if __name__ == '__main__':
     pygame.init()

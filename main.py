@@ -23,7 +23,7 @@ def draw_scene(surface, bg, player_one, player_two):
     bg.put_on(surface)
     player_one.put_on(surface)
     player_two.put_on(surface)
-
+    
 def draw_game_over(screen, winner=None):
     """Draw the game over screen."""
     screen.fill(BACKGROUND_COLOR)
@@ -130,8 +130,8 @@ def main():
                     
                 # Playing state
                 elif game_state == GameState.PLAYING:
-                    player_one.move(event.key, controler=0)
-                    player_two.move(event.key, controler=1)
+                    player_one.move(event.key, controler=0, other_tank=player_two)
+                    player_two.move(event.key, controler=1, other_tank=player_one)
                     
                 # Game over state
                 elif game_state == GameState.GAME_OVER and event.key == pygame.K_SPACE:
@@ -140,6 +140,11 @@ def main():
                     player_lives = [3, 3]
                     player_one = units.TankUnit([[0, 1, 0], [1, 1, 1], [1, 0, 1]], 4 * WORLD_SCALE, 4 * WORLD_SCALE, pixel_on)
                     player_two = units.TankUnit([[0, 1, 0], [1, 1, 1], [1, 0, 1]], 6 * WORLD_SCALE, 10 * WORLD_SCALE, pixel_on)
+                    
+            elif event.type == pygame.KEYUP and game_state == GameState.PLAYING:
+                # Handle key release for continuous movement
+                player_one.move(event.key, controler=0, key_up=True)
+                player_two.move(event.key, controler=1, key_up=True)
         
         # Menu state
         if game_state == GameState.MENU:
@@ -148,13 +153,23 @@ def main():
             
         # Playing state
         elif game_state == GameState.PLAYING:
-            screen.fill(BACKGROUND_COLOR)
-            
             # Update game objects
-            player_one.update()
-            player_two.update()
             bg.update([player_one, player_two])
+            player_one.update(other_tank=player_two)
+            player_two.update(other_tank=player_one)
             
+            
+            # Check for bullet collisions with each other
+            for bullet1 in player_one.bullets[:]:
+                for bullet2 in player_two.bullets[:]:
+                    if bullet1.rect.colliderect(bullet2.rect):
+                        # Remove both bullets when they collide
+                        if bullet1 in player_one.bullets:
+                            player_one.bullets.remove(bullet1)
+                        if bullet2 in player_two.bullets:
+                            player_two.bullets.remove(bullet2)
+                        break
+                
             # Check for hits
             hit_bullet = player_one.got_shot(player_two.bullets)
             if hit_bullet:
@@ -185,7 +200,48 @@ def main():
             screen.blit(lives1, (20, 20))
             screen.blit(lives2, (SCREEN_WIDTH - 120, 20))
             
-        # Game over state
+            # Draw power-up timers
+            current_time = pygame.time.get_ticks()
+            
+            # Player 1 power-up timers
+            y_offset = 50
+            if player_one.has_shield:
+                remaining = max(0, (player_one.shield_timer - current_time) / 1000)
+                shield_text = f.render(f"P1 Shield: {remaining:.1f}s", True, (0, 0, 255))
+                screen.blit(shield_text, (20, y_offset))
+                y_offset += 25
+                
+            if player_one.has_speed_boost:
+                remaining = max(0, (player_one.speed_boost_timer - current_time) / 1000)
+                speed_text = f.render(f"P1 Speed: {remaining:.1f}s", True, (0, 255, 0))
+                screen.blit(speed_text, (20, y_offset))
+                y_offset += 25
+                
+            if player_one.has_rapid_fire:
+                remaining = max(0, (player_one.rapid_fire_timer - current_time) / 1000)
+                fire_text = f.render(f"P1 Fire: {remaining:.1f}s", True, (255, 0, 0))
+                screen.blit(fire_text, (20, y_offset))
+            
+            # Player 2 power-up timers
+            y_offset = 50
+            if player_two.has_shield:
+                remaining = max(0, (player_two.shield_timer - current_time) / 1000)
+                shield_text = f.render(f"P2 Shield: {remaining:.1f}s", True, (0, 0, 255))
+                screen.blit(shield_text, (SCREEN_WIDTH - 200, y_offset))
+                y_offset += 25
+                
+            if player_two.has_speed_boost:
+                remaining = max(0, (player_two.speed_boost_timer - current_time) / 1000)
+                speed_text = f.render(f"P2 Speed: {remaining:.1f}s", True, (0, 255, 0))
+                screen.blit(speed_text, (SCREEN_WIDTH - 200, y_offset))
+                y_offset += 25
+                
+            if player_two.has_rapid_fire:
+                remaining = max(0, (player_two.rapid_fire_timer - current_time) / 1000)
+                fire_text = f.render(f"P2 Fire: {remaining:.1f}s", True, (255, 0, 0))
+                screen.blit(fire_text, (SCREEN_WIDTH - 200, y_offset))
+            
+            # Game over state
         elif game_state == GameState.GAME_OVER:
             draw_game_over(screen, winner)
             
