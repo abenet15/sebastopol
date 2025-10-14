@@ -126,9 +126,9 @@ class PowerUp(GameObject):
     """
     TYPES = ["speed", "shield", "rapid_fire"]
     SPRITE_PATHS = {
-        "speed": "sprites/speed_boost.png",
-        "shield": "sprites/activate_shield.png",
-        "rapid_fire": "sprites/red_fire.png"
+        "speed": "sprites/blue.png",
+        "shield": "sprites/yellow.png",
+        "rapid_fire": "sprites/red.png"
     }
     
     def __init__(self, x, y, power_type=None):
@@ -154,11 +154,11 @@ class PowerUp(GameObject):
         if sprite_path:
             self.surface = self.resource_manager.get_image(sprite_path)
             # Scale the image to match the world scale
-            self.surface = pygame.transform.scale(self.surface, (WORLD_SCALE*2, WORLD_SCALE*2))
+            self.surface = pygame.transform.scale(self.surface, (WORLD_SCALE*3, WORLD_SCALE*3))
         else:
             # Fallback to colored rectangle if sprite not found
             self.surface = pygame.Surface((WORLD_SCALE*2, WORLD_SCALE*2), pygame.SRCALPHA)
-            
+
             # Different colors for different power-up types
             color = {
                 "speed": (0, 255, 0),      # Green for speed
@@ -166,9 +166,6 @@ class PowerUp(GameObject):
                 "rapid_fire": (255, 0, 0)  # Red for rapid fire
             }.get(self.type, (255, 255, 0))  # Yellow default
             
-            pygame.draw.rect(self.surface, color, (0, 0, WORLD_SCALE*2, WORLD_SCALE*2))
-            pygame.draw.rect(self.surface, (255, 255, 255), (2, 2, WORLD_SCALE*2-4, WORLD_SCALE*2-4), 2)
-        
         # Update the image and mask for sprite collision
         self.image = self.surface
         self.mask = pygame.mask.from_surface(self.image)

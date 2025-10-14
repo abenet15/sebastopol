@@ -57,35 +57,23 @@ class TankUnit(GameObject):
         self.image = image  # Store original image
         self.direction_num = 2  # Default to up
         
-        # Create orientations from pixel array first as fallback
-        self.orientations = {
-            0: self.create_surface(np.rot90(self.image, k=1)),   # Left
-            1: self.create_surface(np.rot90(self.image, k=-1)),  # Right
-            2: self.create_surface(self.image),                  # Up
-            3: self.create_surface(np.rot90(self.image, k=2))    # Down
-        }
-        self.orientation = self.orientations[self.direction_num]
-        self.surface = self.orientation
-        
         # Try to load tank sprite (will override pixel array if successful)
         try:
-            from utils import ResourceManager
             resource_manager = ResourceManager.get_instance()
             tank_sprite = resource_manager.get_image("sprites/tank.png")
             if tank_sprite:
-                # Scale to match tank size
-                tank_sprite = pygame.transform.scale(tank_sprite, (WORLD_SCALE*3, WORLD_SCALE*3))
-                # Update all orientations
-                np_sprite = pygame.surfarray.array3d(tank_sprite)
+                # Ensure surface has per-pixel alpha and scale it
+                tank_sprite = pygame.transform.scale(tank_sprite, (WORLD_SCALE*3, WORLD_SCALE*3)).convert_alpha()
+                # Create rotated orientations using pygame transforms (keeps alpha)
                 self.orientations = {
-                    0: pygame.surfarray.make_surface(np.rot90(np_sprite, k=1)),   # Left
-                    1: pygame.surfarray.make_surface(np.rot90(np_sprite, k=-1)),  # Right
-                    2: pygame.surfarray.make_surface(np_sprite),                  # Up
-                    3: pygame.surfarray.make_surface(np.rot90(np_sprite, k=2))    # Down
+                    0: pygame.transform.rotate(tank_sprite, 90),   # Left
+                    1: pygame.transform.rotate(tank_sprite, -90),  # Right
+                    2: tank_sprite,                                # Up (original)
+                    3: pygame.transform.rotate(tank_sprite, 180)   # Down
                 }
                 self.orientation = self.orientations[self.direction_num]
                 self.surface = self.orientation
-                print("Tank sprite loaded successfully")
+                print("Tank sprite loaded successfully (with alpha preserved)")
         except Exception as e:
             print(f"Using fallback pixel array: {e}")
         self.direction_num = 2
@@ -118,21 +106,7 @@ class TankUnit(GameObject):
         self.hit_sound = self.resource_manager.get_sound("sounds/hit0.mp3", HIT_VOLUME)
         self.move_sound = self.resource_manager.get_sound("sounds/swoosh0.mp3", MOVE_VOLUME)
         
-    def create_surface(self, np_image):
-        """Create a surface from a numpy array representation of the tank."""
-        surface = pygame.Surface((WORLD_SCALE*3, WORLD_SCALE*3), pygame.SRCALPHA)
-        for y, row in enumerate(np_image):
-            for x, pixel in enumerate(row):
-                # Check if pixel is a single value or an array
-                if isinstance(pixel, (list, np.ndarray)):
-                    is_active = np.any(pixel)
-                else:
-                    is_active = pixel == 1
-                    
-                if is_active:
-                    surface.blit(self.pixel, (x * WORLD_SCALE, y * WORLD_SCALE))
-        return surface
-
+        
     def get_shake_offset(self):
         """Get random offset for shake effect."""
         if self.shake_timer > 0:
@@ -382,48 +356,25 @@ class TankUnit(GameObject):
             pass
             
     def update_tank_sprite(self, sprite_path):
-        """Update the tank sprite based on power-up."""
-        # Load the new sprite
+        """Update the tank sprite based on power-up (preserving alpha)."""
         try:
             tank_sprite = self.resource_manager.get_image(sprite_path)
             if tank_sprite:
-                # Scale to match tank size
-                tank_sprite = pygame.transform.scale(tank_sprite, (WORLD_SCALE*3, WORLD_SCALE*3))
-                # Convert to numpy array for rotation
-                self.image = pygame.surfarray.array3d(tank_sprite)
-                # Update all orientations with proper rotations
+                tank_sprite = pygame.transform.scale(tank_sprite, (WORLD_SCALE*3, WORLD_SCALE*3)).convert_alpha()
                 self.orientations = {
-                    0: pygame.surfarray.make_surface(np.rot90(self.image, k=1)),   # Left
-                    1: pygame.surfarray.make_surface(np.rot90(self.image, k=-1)),  # Right
-                    2: pygame.surfarray.make_surface(self.image),                  # Up
-                    3: pygame.surfarray.make_surface(np.rot90(self.image, k=2))    # Down
+                    0: pygame.transform.rotate(tank_sprite, 90),   # Left
+                    1: pygame.transform.rotate(tank_sprite, -90),  # Right
+                    2: tank_sprite,                                # Up
+                    3: pygame.transform.rotate(tank_sprite, 180)   # Down
                 }
-                # Update current orientation
                 self.orientation = self.orientations[self.direction_num]
                 self.surface = self.orientation
-                print(f"Tank sprite updated to: {sprite_path} with orientation {self.direction_num}")
+                self.update_rect()
+                print(f"Tank sprite updated to: {sprite_path} (alpha preserved)")
         except Exception as e:
             print(f"Error updating tank sprite: {e}")
 
 if __name__ == '__main__':
-    pygame.init()
-    screen = pygame.display.set_mode((500, 500))
-    clock = pygame.time.Clock()
-    pixel_on = pygame.image.load('pixels/b1.png').convert()
-    player_one = TankUnit([[0, 1, 0], [1, 1, 1], [1, 0, 1]], 4 * WORLD_SCALE, 4 * WORLD_SCALE, pixel_on)
-
-    running = True
-    while running:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-            elif event.type == pygame.KEYDOWN:
-                player_one.move(event.key, controler=0)
-             
-        screen.fill(BACKGROUND_COLOR)
-        player_one.update()
-        player_one.put_on(screen)
-        pygame.display.flip()
-        clock.tick(FPS)
+    pass
 
 
